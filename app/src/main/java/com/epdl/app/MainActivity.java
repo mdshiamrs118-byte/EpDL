@@ -179,6 +179,8 @@ public class MainActivity extends Activity {
 
     boolean block() { return sp.getBoolean("block", true); }
 
+    boolean par() { return sp.getBoolean("par", true); }
+
     void save() { sp.edit().putString("prefix", prefix).putInt("ep", ep).apply(); }
 
     // ---------- menu ----------
@@ -186,7 +188,8 @@ public class MainActivity extends Activity {
         PopupMenu pm = new PopupMenu(this, more);
         pm.getMenu().add(0, 1, 0, "Set URL");
         pm.getMenu().add(0, 2, 1, "Block redirects").setCheckable(true).setChecked(block());
-        pm.getMenu().add(0, 3, 2, "Reload");
+        pm.getMenu().add(0, 3, 2, "Parallel download").setCheckable(true).setChecked(par());
+        pm.getMenu().add(0, 4, 3, "Reload");
         pm.setOnMenuItemClickListener(it -> {
             switch (it.getItemId()) {
                 case 1: setUrl(); break;
@@ -194,7 +197,11 @@ public class MainActivity extends Activity {
                     sp.edit().putBoolean("block", !block()).apply();
                     toast(block() ? "Redirects blocked" : "Redirects allowed");
                     break;
-                case 3: web.reload(); break;
+                case 3:
+                    sp.edit().putBoolean("par", !par()).apply();
+                    toast(par() ? "Parallel on: faster, several at once" : "Parallel off");
+                    break;
+                case 4: web.reload(); break;
             }
             return true;
         });
@@ -235,7 +242,7 @@ public class MainActivity extends Activity {
 
     // ---------- download ----------
     void download() {
-        if (DlService.busy) { toast("A download is already running"); return; }
+        if (!par() && DlService.active.get() > 0) { toast("A download is already running"); return; }
         final List<String[]> c;
         synchronized (found) { c = new ArrayList<>(found); }
         if (c.isEmpty()) { toast("No video detected yet. Press play on the video first."); return; }
@@ -253,11 +260,15 @@ public class MainActivity extends Activity {
         String page = web.getUrl();
         String name = Uri.parse(page == null ? "" : page).getLastPathSegment();
         name = name == null ? "video" : name.replaceAll("[^A-Za-z0-9._-]", "_");
-        DlService.busy = true;
+        String folder = name.replaceAll("-episode-\\d*$", "");
+        if (folder.isEmpty()) folder = name;
+        DlService.active.incrementAndGet();
         Intent i = new Intent(this, DlService.class)
                 .putExtra("u", f[0])
                 .putExtra("r", f[1] != null ? f[1] : page)
                 .putExtra("n", name)
+                .putExtra("f", folder)
+                .putExtra("t", par() ? 16 : 4)
                 .putExtra("ua", web.getSettings().getUserAgentString());
         startForegroundService(i);
         toast("Downloading " + name);
